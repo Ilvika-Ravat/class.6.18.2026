@@ -1,0 +1,179 @@
+---
+title: "2026 FIFA World Cup Squad Analysis"
+format:
+  html:
+    toc: true
+    theme: cosmo
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+library(tidyverse)
+
+players <- read_csv("player_data.csv", show_col_types = FALSE)
+
+players_enriched <- players %>%
+  mutate(
+    birth_year = as.integer(format(date_of_birth, "%Y")),
+    birth_month = factor(format(date_of_birth, "%b"), levels = month.abb, ordered = TRUE),
+    position_group = str_remove(position, "^\\d+"),
+    age_band = cut(
+      age,
+      breaks = c(0, 22, 26, 30, Inf),
+      labels = c("22 and under", "23-26", "27-30", "31+"),
+      right = TRUE
+    ),
+    goals_per_cap = if_else(caps > 0, goals / caps, NA_real_)
+  )
+
+team_age_summary <- players_enriched %>%
+  group_by(team) %>%
+  summarise(
+    avg_age = mean(age, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    players = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(avg_age))
+
+team_caps_summary <- players_enriched %>%
+  group_by(team) %>%
+  summarise(
+    avg_caps = mean(caps, na.rm = TRUE),
+    total_goals = sum(goals, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(avg_caps))
+
+position_summary <- players_enriched %>%
+  group_by(position_group) %>%
+  summarise(
+    avg_age = mean(age, na.rm = TRUE),
+    avg_caps = mean(caps, na.rm = TRUE),
+    avg_goals_per_cap = mean(goals_per_cap, na.rm = TRUE),
+    players = n(),
+    .groups = "drop"
+  )
+```
+
+## Squad Age Profile
+
+The chart below compares average squad age across the teams in the dataset.
+
+```{r}
+team_age_summary %>%
+  mutate(team = fct_reorder(team, avg_age)) %>%
+  ggplot(aes(x = avg_age, y = team)) +
+  geom_col(fill = "#0f766e", width = 0.7) +
+  geom_text(aes(label = round(avg_age, 1)), hjust = -0.15, size = 3) +
+  labs(
+    x = "Average player age",
+    y = NULL,
+    title = "Average squad age by team",
+    subtitle = "Calculated from the player data scraped from Wikipedia"
+  ) +
+  coord_cartesian(xlim = c(0, max(team_age_summary$avg_age) + 2)) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+## Experience Profile
+
+```{r}
+team_caps_summary %>%
+  mutate(team = fct_reorder(team, avg_caps)) %>%
+  ggplot(aes(x = avg_caps, y = team)) +
+  geom_col(fill = "#7c3aed", width = 0.7) +
+  geom_text(aes(label = round(avg_caps, 1)), hjust = -0.15, size = 3) +
+  labs(
+    x = "Average caps per player",
+    y = NULL,
+    title = "Average international experience by team",
+    subtitle = "Mean caps per squad member"
+  ) +
+  coord_cartesian(xlim = c(0, max(team_caps_summary$avg_caps) + 5)) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+## Position Comparison
+
+```{r}
+position_summary %>%
+  mutate(position_group = fct_reorder(position_group, avg_age)) %>%
+  ggplot(aes(x = position_group, y = avg_age, fill = position_group)) +
+  geom_col(width = 0.7, show.legend = FALSE) +
+  geom_text(aes(label = round(avg_age, 1)), vjust = -0.35, size = 3) +
+  labs(
+    x = NULL,
+    y = "Average age",
+    title = "Average age by position group"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+```
+
+## Overall Distribution
+
+```{r}
+players_enriched %>%
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 2, fill = "#f97316", color = "white") +
+  labs(
+    x = "Age",
+    y = "Number of players",
+    title = "Age distribution across all players"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+```
+
+## Age And Caps
+
+```{r}
+players_enriched %>%
+  ggplot(aes(x = caps, y = age, color = position_group)) +
+  geom_point(alpha = 0.8, size = 2) +
+  geom_smooth(se = FALSE, method = "loess", linewidth = 0.7, color = "#111827") +
+  labs(
+    x = "Caps",
+    y = "Age",
+    color = "Position",
+    title = "Player age and experience",
+    subtitle = "Each point is a player"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+```
+
+## Birth Month Mix
+
+```{r}
+players_enriched %>%
+  count(birth_month) %>%
+  mutate(birth_month = fct_reorder(birth_month, n)) %>%
+  ggplot(aes(x = n, y = birth_month)) +
+  geom_col(width = 0.75, fill = "#0ea5e9") +
+  geom_text(aes(label = n), hjust = -0.15, size = 3.5, color = "#0f172a") +
+  labs(
+    x = NULL,
+    y = "Players",
+    title = "Birth month distribution",
+    subtitle = "A quick view of how the squad is spread across the calendar"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold")
+  ) +
+  coord_cartesian(xlim = c(0, max(count(players_enriched, birth_month)$n) + 3))
+```
